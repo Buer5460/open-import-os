@@ -1,0 +1,41 @@
+{
+  "name": "open-import-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open Import OS / AI Import Copilot - US import cost, profit and growth collaboration platform",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "setup:local": "node scripts/setup-local.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "pnpm --filter @open-import-os/web dev",
+    "dev:worker": "pnpm --filter @open-import-os/worker dev",
+    "validate": "node scripts/validate.mjs",
+    "demo:seed": "pnpm --filter @open-import-os/db exec tsx prisma/seed.ts",
+    "test": "pnpm -r --if-present test",
+    "test:coverage": "node scripts/test-coverage.mjs",
+    "build": "pnpm -r --if-present build",
+    "backup": "node scripts/backup.mjs",
+    "restore:verify": "node scripts/restore-verify.mjs",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "openapi": "pnpm --filter @open-import-os/contracts exec tsx src/openapi.ts",
+    "pg": "node scripts/pg.mjs",
+    "pg:start": "node scripts/pg.mjs start",
+    "pg:stop": "node scripts/pg.mjs stop",
+    "pg:status": "node scripts/pg.mjs status",
+    "migrate": "pnpm --filter @open-import-os/db exec prisma migrate dev"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@vitest/coverage-v8": "5.0.5",
+    "embedded-postgres": "18.4.0-beta.17",
+    "pg": "8.23.1",
+    "prettier": "3.6.2",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "5.0.5"
+  }
+}

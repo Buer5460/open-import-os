@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>美国进口成本计算器 | 到仓成本与盈亏平衡售价 - 免费测算</title>
+<meta name="description" content="输入采购价和运费，30 秒算出到仓成本、盈亏平衡售价、目标利润率售价。面向从中国/东南亚采购销往美国的跨境卖家。">
+<style>
+  :root{
+    --ink:#141a20; --sub:#5b6774; --line:#e2e6ea; --bg:#fff;
+    --accent:#c8452f; --accent2:#1f6f5c; --warn:#b8860b; --blue:#2a5d8f;
+    --card:#f7f8f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:14px;line-height:1.65}
+  .wrap{max-width:880px;margin:0 auto;padding:32px 22px 60px}
+  header{border-bottom:3px solid var(--ink);padding-bottom:18px;margin-bottom:26px}
+  .kick{font-size:11.5px;letter-spacing:.14em;color:var(--accent);font-weight:700;margin-bottom:8px}
+  h1{font-size:27px;line-height:1.25;margin:0 0 8px;letter-spacing:-.4px}
+  .sub{font-size:13.5px;color:var(--sub)}
+  h2{font-size:17px;margin:30px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  label{display:block;font-size:12.5px;font-weight:600;margin-bottom:5px;color:#2b3540}
+  label .opt{font-weight:400;color:var(--sub);font-size:11.5px}
+  input,select{width:100%;padding:9px 11px;border:1px solid #cfd6dc;border-radius:6px;
+    font-size:14px;font-family:inherit;background:#fff}
+  input:focus,select:focus{outline:2px solid #cfe0ee;border-color:var(--blue)}
+  .hint{font-size:11px;color:var(--sub);margin-top:4px;line-height:1.45}
+  .confirm{display:flex;align-items:center;gap:6px;font-size:13px;color:#374151;margin-top:4px}
+  .confirm input{width:auto}
+  .btn{background:var(--ink);color:#fff;border:none;border-radius:6px;padding:12px 22px;
+    font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;width:100%}
+  .btn:hover{background:#2b3540}
+  .btn:disabled{background:#a8b0b8;cursor:not-allowed}
+  .stats{display:grid;gap:12px;grid-template-columns:repeat(4,1fr);margin:16px 0}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
+  .stat .v{font-size:22px;font-weight:800;letter-spacing:-.5px;line-height:1.15}
+  .stat .v small{font-size:13px;font-weight:700;color:var(--sub)}
+  .stat .l{font-size:11px;color:var(--sub);margin-top:5px;line-height:1.4}
+  .stat.hi{background:#fdf3f1;border-color:#f0d5cf}
+  .stat.hi .v{color:var(--accent)}
+  .stat.good{background:#f0f7f4;border-color:#cfe5dd}
+  .stat.good .v{color:var(--accent2)}
+  .warnbox{background:#fdf8ec;border:1px solid #f0e2be;border-left:4px solid var(--warn);
+    border-radius:6px;padding:13px 15px;margin:16px 0;font-size:12.5px}
+  .warnbox .h{font-weight:700;color:var(--warn);margin-bottom:5px}
+  .infobox{background:#f5f8fa;border:1px solid #dbe4ea;border-radius:6px;padding:13px 15px;
+    margin:16px 0;font-size:12.5px}
+  .err{background:#fdf3f1;border:1px solid #f0d5cf;border-left:4px solid var(--accent);
+    border-radius:6px;padding:12px 15px;margin:14px 0;font-size:13px;color:#8f2d1c;display:none}
+  ul.tight{margin:8px 0 0;padding-left:19px}
+  ul.tight li{margin-bottom:5px;font-size:12.5px}
+  .disc{font-size:11.5px;color:var(--sub);border-top:1px solid var(--line);
+    padding-top:14px;margin-top:26px;line-height:1.6}
+  .badge{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 7px;
+    border-radius:4px;background:#eef0f2;color:var(--sub)}
+  .badge.red{background:#fbe9e6;color:#a8341f}
+  .badge.grn{background:#e6f2ec;color:#155c4a}
+  details{margin-top:14px;border:1px solid var(--line);border-radius:6px;padding:0}
+  summary{padding:11px 14px;cursor:pointer;font-weight:700;font-size:13.5px;
+    background:var(--card);border-radius:6px}
+  details[open] summary{border-bottom:1px solid var(--line);border-radius:6px 6px 0 0}
+  .details-body{padding:12px 14px;font-size:12.5px}
+  @media(max-width:700px){
+    .g2,.g3,.stats{grid-template-columns:1fr}
+    .wrap{padding:22px 16px 44px}
+    h1{font-size:22px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kick">FREE · NO SIGNUP</div>
+  <h1>从中国进口到美国，你的真实成本是多少？</h1>
+  <div class="sub">输入采购价和运费，30 秒算出到仓成本、盈亏平衡售价、目标利润率售价。不用注册。</div>
+</header>
+
+<form id="f">
+  <h2>① 采购与运输</h2>
+  <div class="grid g2">
+    <div>
+      <label>采购单价（USD）<span class="opt">必填</span></label>
+      <input id="unitPrice" type="number" step="0.01" min="0" placeholder="8.00" required>
+    </div>
+    <div>
+      <label>数量<span class="opt">必填</span></label>
+      <input id="quantity" type="number" step="1" min="1" value="1000" required>
+    </div>
+    <div>
+      <label>运费（整批，USD）</label>
+      <input id="freight" type="number" step="0.01" min="0" placeholder="1.20 × 数量">
+      <div class="hint">整批运费，会自动分摊到单件</div>
+    </div>
+    <div>
+      <label>保险（整批，USD）</label>
+      <input id="insurance" type="number" step="0.01" min="0" placeholder="通常为货值 0.3%–1%">
+    </div>
+    <div>
+      <label>清关与报关（整批，USD）</label>
+      <input id="customsClearance" type="number" step="0.01" min="0" placeholder="0.80 × 数量">
+      <div class="hint">报关行费用通常 $150–400/票</div>
+    </div>
+    <div>
+      <label>内陆运输（整批，USD）</label>
+      <input id="inlandFreight" type="number" step="0.01" min="0" placeholder="港口到仓库">
+    </div>
+  </div>
+
+  <h2>② 税费 <span class="badge">可留空</span></h2>
+  <div class="grid g3">
+    <div>
+      <label>关税税率（%）</label>
+      <input id="dutyRatePct" type="number" step="0.01" min="0" placeholder="如 25">
+      <div class="hint">留空则不计算关税</div>
+    </div>
+    <div>
+      <label>MPF 商品处理费（USD）</label>
+      <input id="mpf" type="number" step="0.01" min="0" placeholder="有上下限">
+    </div>
+    <div>
+      <label>HMF 港口维护费（USD）</label>
+      <input id="hmf" type="number" step="0.01" min="0" placeholder="仅海运">
+    </div>
+    <div>
+      <label>其他税费（单件 USD）</label>
+      <input id="otherTaxes" type="number" step="0.01" min="0" placeholder="如 2.00">
+      <div class="hint">单件口径的税额行；如它代表整票全部税费，请勾选下方“税额覆盖”确认。</div>
+    </div>
+  </div>
+
+  <div class="grid g3" style="margin-top:12px">
+    <div>
+      <label>其他到岸费用（单件 USD）</label>
+      <input id="otherCost" type="number" step="0.01" min="0" placeholder="0">
+    </div>
+    <div>
+      <label>港口杂费（单件 USD）</label>
+      <input id="portCharges" type="number" step="0.01" min="0" placeholder="0">
+    </div>
+    <div>
+      <label>仓储费（单件 USD）</label>
+      <input id="warehousingCost" type="number" step="0.01" min="0" placeholder="0">
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:12px">
+    <div>
+      <label>税额覆盖口径</label>
+      <select id="taxScopeMode">
+        <option value="ITEMIZED" selected>分项（其他税费只是一行，不代表全部税费）</option>
+        <option value="MANUAL_TOTAL_SCENARIO">手动总额情景（我确认它已包含全部税费）</option>
+      </select>
+      <div class="hint">选“手动总额”需填写覆盖说明，否则按分项处理。</div>
+    </div>
+    <div>
+      <label>税额覆盖说明（选“手动总额”时必填）</label>
+      <input id="taxCoverage" type="text" placeholder="例如：含基础关税+301条款">
+    </div>
+    <div>
+      <label>税额计量层级</label>
+      <select id="taxLevel">
+        <option value="PER_UNIT" selected>按件（输入框数值是每件税额）</option>
+        <option value="PER_ENTRY">按整票（输入框数值是整票税额，将按数量分摊）</option>
+      </select>
+    </div>
+    <div>
+      <label>是否已包含基础关税</label>
+      <select id="coversBaseDuty">
+        <option value="UNKNOWN" selected>未确认（将保守阻断，不会猜测）</option>
+        <option value="INCLUDED">已包含基础关税（与关税税率同时填写会被阻断）</option>
+        <option value="EXCLUDED">未包含（仅附加税，基础关税单独逐项计算）</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid g3" style="margin-top:12px">
+    <div>
+      <label>保险：本项确认为0</label>
+      <label class="confirm"><input id="na-insurance" type="checkbox"> 无保险费</label>
+    </div>
+    <div>
+      <label>港口杂费：本项确认为0</label>
+      <label class="confirm"><input id="na-portCharges" type="checkbox"> 无港口杂费</label>
+    </div>
+    <div>
+      <label>仓储费：本项确认为0</label>
+      <label class="confirm"><input id="na-warehousingCost" type="checkbox"> 无仓储费</label>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:12px">
+    <div>
+      <label>HTS 编码 <span class="opt">可留空</span></label>
+      <input id="htsCode" type="text" placeholder="如 8518.22.0000">
+      <div class="hint">留空则归类风险未评估。本工具不确认编码准确性。</div>
+    </div>
+    <div>
+      <label>原产国</label>
+      <input id="originCountry" type="text" placeholder="China" value="China">
+      <div class="hint">原产国 ≠ 发货国，影响税率</div>
+    </div>
+  </div>
+
+  <h2>③ 销售（算出利润需要）</h2>
+  <div class="grid g2">
+    <div>
+      <label>售价（USD）<span class="opt">选填</span></label>
+      <input id="salesPrice" type="number" step="0.01" min="0" placeholder="19.90">
+    </div>
+    <div>
+      <label>平台佣金（%）</label>
+      <input id="platformFeePct" type="number" step="0.01" min="0" placeholder="如 15">
+    </div>
+    <div>
+      <label>支付手续费（%）</label>
+      <input id="paymentFeePct" type="number" step="0.01" min="0" placeholder="如 3">
+    </div>
+    <div>
+      <label>履约/配送费（单件 USD）</label>
+      <input id="fulfillmentFee" type="number" step="0.01" min="0" placeholder="如 3.00">
+    </div>
+    <div>
+      <label>广告分摊（单件 USD）</label>
+      <input id="adSpendPerUnit" type="number" step="0.01" min="0" placeholder="如 2.00">
+    </div>
+    <div>
+      <label>其他变动费率（%）</label>
+      <input id="otherVariableFeePct" type="number" step="0.01" min="0" placeholder="0">
+    </div>
+    <div>
+      <label>其他固定费用（单件 USD）</label>
+      <input id="otherFixedFee" type="number" step="0.01" min="0" placeholder="0">
+    </div>
+    <div>
+      <label>其他固定费用：本项确认为0</label>
+      <label class="confirm"><input id="na-otherFixedFee" type="checkbox"> 无其他固定费</label>
+    </div>
+    <div>
+      <label>广告费：本项确认为0</label>
+      <label class="confirm"><input id="na-adSpendPerUnit" type="checkbox"> 无广告费</label>
+    </div>
+    <div>
+      <label>履约费：本项确认为0</label>
+      <label class="confirm"><input id="na-fulfillmentFee" type="checkbox"> 无履约费</label>
+    </div>
+    <div>
+      <label>目标贡献利润率（%）<span class="opt">选填</span></label>
+      <input id="targetMarginPct" type="number" step="0.01" min="0" placeholder="如 20">
+      <div class="hint">填了才算「目标利润率对应售价」</div>
+    </div>
+  </div>
+
+  <div style="margin:22px 0">
+    <button class="btn" type="submit" id="go">免费测算</button>
+  </div>
+</form>
+
+<div class="err" id="err"></div>
+
+<div id="out" style="display:none">
+
+  <h2>测算结果</h2>
+  <div id="status-note" style="display:none;background:#fff7e6;border:1px solid #f0c36d;border-radius:8px;padding:10px 14px;margin:12px 0;font-size:14px;color:#8a5a00"></div>
+  <div class="stats">
+    <div class="stat hi">
+      <div class="v" id="v-landed">—</div>
+      <div class="l" id="v-landed-label">单件到仓成本</div>
+    </div>
+    <div class="stat">
+      <div class="v" id="v-gap">—</div>
+      <div class="l">到仓 vs FOB 涨幅</div>
+    </div>
+    <div class="stat good">
+      <div class="v" id="v-breakeven">—</div>
+      <div class="l">盈亏平衡售价</div>
+    </div>
+    <div class="stat">
+      <div class="v" id="v-target">—</div>
+      <div class="l">目标利润率售价</div>
+    </div>
+  </div>
+
+  <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat">
+      <div class="v" id="v-total">—</div>
+      <div class="l" id="v-total-label">整批到仓成本</div>
+    </div>
+    <div class="stat">
+      <div class="v" id="v-contrib">—</div>
+      <div class="l" id="v-contrib-label">单件贡献利润</div>
+    </div>
+    <div class="stat">
+      <div class="v" id="v-margin">—</div>
+      <div class="l">贡献利润率</div>
+    </div>
+  </div>
+
+  <div class="warnbox" id="unc-box">
+    <div class="h">⚠️ 未确认项（未计入总额）</div>
+    <ul class="tight" id="unc-list"></ul>
+  </div>
+
+  <div class="infobox">
+    <div class="h" style="font-weight:700;margin-bottom:6px">你可能漏掉的成本</div>
+    <ul class="tight">
+      <li>Section 301 附加税（中国原产多数品类）</li>
+      <li>Section 232（金属、汽车零部件）</li>
+      <li>MPF 商品处理费（有最低费和上限）</li>
+      <li>HMF 港口维护费（仅海运）</li>
+      <li>关税保证金（Customs Bond）</li>
+      <li>报关行费用（$150–400/票）</li>
+      <li>内陆运输与仓储</li>
+      <li>FDA / CPSC / USDA 等 PGA 合规文件</li>
+    </ul>
+  </div>
+
+  <details>
+    <summary>本结果的边界（请务必阅读）</summary>
+    <div class="details-body">
+      <p id="disc-text" style="margin:0 0 10px"></p>
+      <p style="margin:0 0 8px"><b>未包含：</b>可能适用的附加税层（Section 301/232）、PGA 合规成本、退货损耗。</p>
+      <p style="margin:0"><b>未知税费不当 0：</b>未确认的成本项在上方单独列出，不混入总额。</p>
+    </div>
+  </details>
+
+  <div class="disc">
+    引擎版本：<span id="eng"></span><br>
+    本工具提供基于你所输入费率的已知成本测算，<b>不构成报关或法律意见</b>。HTS 归类建议须由持牌报关人复核。
+    不保证「可以进口」「关税完全准确」或「必定赚钱」。
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const val = (id) => { const v = $(id).value; return v === "" ? null : v; };
+const money = (v) => v === null || v === undefined ? "—"
+  : "$" + Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+// The engine returns the margin as a RATIO (0.1457 = 14.57%). Multiply by
+// 100 for display; a null/empty margin is shown as "—", never as 0%.
+const pct = (v) => v === null || v === undefined || v === "" ? "—"
+  : (Number(v) * 100).toFixed(2) + "%";
+
+$("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("err").style.display = "none";
+  $("go").disabled = true;
+  $("go").textContent = "计算中…";
+
+  try {
+    const res = await fetch("/api/calculate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        unitPrice: val("unitPrice"),
+        quantity: val("quantity"),
+        freight: val("freight"),
+        insurance: val("insurance"),
+        customsClearance: val("customsClearance"),
+        inlandFreight: val("inlandFreight"),
+        dutyRatePct: val("dutyRatePct"),
+        mpf: val("mpf"),
+        hmf: val("hmf"),
+        otherTaxes: val("otherTaxes"),
+        otherCost: val("otherCost"),
+        portCharges: val("portCharges"),
+        warehousingCost: val("warehousingCost"),
+        taxScopeMode: $("taxScopeMode").value,
+        taxCoverage: val("taxCoverage"),
+        taxLevel: $("taxLevel").value,
+        coversBaseDuty: $("coversBaseDuty").value,
+        htsCode: val("htsCode"),
+        originCountry: val("originCountry"),
+        salesPrice: val("salesPrice"),
+        platformFeePct: val("platformFeePct"),
+        paymentFeePct: val("paymentFeePct"),
+        fulfillmentFee: $("na-fulfillmentFee").checked ? "0" : val("fulfillmentFee"),
+        adSpendPerUnit: $("na-adSpendPerUnit").checked ? "0" : val("adSpendPerUnit"),
+        otherFixedFee: $("na-otherFixedFee").checked ? "0" : val("otherFixedFee"),
+        otherVariableFeePct: val("otherVariableFeePct"),
+        naInsurance: $("na-insurance").checked,
+        naPortCharges: $("na-portCharges").checked,
+        naWarehousingCost: $("na-warehousingCost").checked,
+        targetMarginPct: val("targetMarginPct"),
+      }),
+    });
+    const d = await res.json();
+
+    if (!d.ok) {
+      $("err").textContent = d.error || "计算失败";
+      $("err").style.display = "block";
+      return;
+    }
+
+    // I26: the result labels reflect the real status. An incomplete cost is
+    // a "known-fee subtotal", not a landed cost; an incomplete profit says
+    // so in its own label. No fake completeness via a disclaimer alone.
+    const costComplete = d.landed.status === "COMPLETE_WITHIN_SCOPE";
+    $("v-landed").textContent = money(d.landed.unitLandedCost);
+    $("v-landed-label").textContent = costComplete ? "单件到仓成本" : "单件已知费用小计（不完整）";
+    $("v-total").textContent = money(d.landed.totalLandedCost);
+    $("v-total-label").textContent = costComplete ? "整批到仓成本" : "整批已知费用小计（不完整）";
+    $("v-gap").textContent = d.landed.gapPct === null ? "—" : "+" + d.landed.gapPct + "%";
+    const statusNote = $("status-note");
+    if (!costComplete) {
+      statusNote.textContent =
+        "以下为已知费用小计：缺失项（" + (d.landed.missingFields || []).join("、") + "）未计入。补全后才是完整到仓成本。";
+      statusNote.style.display = "block";
+    } else {
+      statusNote.style.display = "none";
+    }
+
+    if (d.profit) {
+      const profitComplete = d.profit.status === "COMPLETE_WITHIN_SCOPE";
+      $("v-breakeven").textContent = money(d.profit.breakevenPrice);
+      $("v-target").textContent =
+        d.profit.targetPrice === null ? "—" : money(d.profit.targetPrice);
+      $("v-contrib").textContent = money(d.profit.contribution);
+      $("v-contrib-label").textContent = profitComplete ? "单件贡献利润" : "单件贡献利润（假设利润，不完整）";
+      $("v-margin").textContent = d.profit.margin === null ? "—" : pct(d.profit.margin);
+    } else {
+      $("v-breakeven").textContent = "—";
+      $("v-target").textContent = "—";
+      $("v-contrib").textContent = "—";
+      $("v-contrib-label").textContent = "单件贡献利润";
+      $("v-margin").textContent = "—";
+    }
+
+    const ul = $("unc-list");
+    ul.innerHTML = "";
+    (d.unconfirmed || []).forEach((u) => {
+      const li = document.createElement("li");
+      li.textContent = u.item + "：" + u.note;
+      ul.appendChild(li);
+    });
+    $("unc-box").style.display = (d.unconfirmed || []).length ? "block" : "none";
+
+    $("disc-text").textContent = d.disclaimer || "";
+    $("eng").textContent = d.engineVersion || "—";
+    $("out").style.display = "block";
+    $("out").scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // Funnel instrumentation: the 4th level matters most.
+    try {
+      const p = new URLSearchParams(location.search);
+      if (window.__track) window.__track("calculation_completed", Object.fromEntries(p));
+    } catch {}
+  } catch (err) {
+    $("err").textContent = "请求失败：" + (err?.message ?? String(err));
+    $("err").style.display = "block";
+  } finally {
+    $("go").disabled = false;
+    $("go").textContent = "免费测算";
+  }
+});
+</script>
+</body>
+</html>

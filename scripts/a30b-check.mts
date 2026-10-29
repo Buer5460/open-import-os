@@ -1,0 +1,10 @@
+import pg from "pg";
+const c = new pg.Client({ connectionString: "postgresql://postgres:postgres@127.0.0.1:55432/open_import_os_acc" });
+await c.connect();
+const rows = await c.query("select sku, \"nameZh\" from \"Product\" where sku like 'A30-%' limit 5");
+console.log("A30 products after restart:", rows.rows);
+const cnt = await c.query('select count(*)::int n from "Product"');
+console.log("total products in acc DB:", cnt.rows[0].n);
+const health = await fetch("http://127.0.0.1:57931/api/v1/health").then((r) => r.json());
+console.log("restarted instance health:", health);
+await c.end();

@@ -1,0 +1,1432 @@
+// Open Import OS - Prisma schema
+// PostgreSQL. Every business table is tenant-scoped via organizationId and
+// carries an explicit data provenance marker (see DataSource / AiMode enums).
+//
+// Invariants enforced here (not only in application code):
+//  - unique constraints on natural keys (sku+org, normalizedDomain+org, ...)
+//  - organization scoping columns on every business table
+//  - immutable history tables (no update path in the app) for calculations,
+//    product versions and rule versions
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["views", "relationJoins"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum DataSource {
+  DEMO
+  USER_ENTERED
+  OFFICIAL_SNAPSHOT
+  PROVIDER_RESULT
+}
+
+enum AiMode {
+  MODEL
+  RULE_BASED
+  MOCK
+  UNAVAILABLE
+}
+
+enum CalculationStatus {
+  COMPLETE_WITHIN_SCOPE
+  INCOMPLETE
+  REVIEW_REQUIRED
+  BLOCKED
+}
+
+enum ConnectionStatus {
+  CONNECTED_TESTED
+  CONFIGURED_UNTESTED
+  NOT_CONFIGURED
+  FAILED
+}
+
+enum ProductStatus {
+  DRAFT
+  NEEDS_INFO
+  READY_FOR_REVIEW
+  REVIEWED
+  RECHECK_REQUIRED
+}
+
+enum ClassificationStatus {
+  NONE
+  USER_CONFIRMED
+  CANDIDATE_RESEARCH
+  NEEDS_REVIEW
+  SUPERSEDED
+}
+
+enum ReviewStatus {
+  NOT_REQUIRED
+  PENDING_ASSIGNMENT
+  ASSIGNED
+  IN_PROGRESS
+  INFO_REQUESTED
+  COMPLETED
+  ADOPTED
+  RETURNED
+  CANCELLED
+}
+
+enum AlertStatus {
+  OPEN
+  ACKNOWLEDGED
+  TASK_CREATED
+  RESOLVED
+  DISMISSED
+}
+
+enum JobStatus {
+  QUEUED
+  LEASED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  DEAD_LETTER
+}
+
+enum AllocationMethod {
+  BY_QUANTITY
+  BY_VALUE
+  BY_WEIGHT
+  BY_RATIO
+}
+
+enum ShipmentMode {
+  OCEAN
+  AIR
+  RAIL
+  PARCEL
+  UNKNOWN
+}
+
+enum Incoterm {
+  EXW
+  FCA
+  FAS
+  FOB
+  CFR
+  CIF
+  CPT
+  CIP
+  DAP
+  DPU
+  DDP
+  UNKNOWN
+}
+
+enum ScenarioKind {
+  BASE
+  SUPPLIER
+  SHIPPING_MODE
+  PURCHASE_PRICE
+  FREIGHT
+  TAX_ASSUMPTION
+  SALES_PRICE
+  AD_SPEND
+  CUSTOM
+}
+
+enum LeadStatus {
+  NEW
+  VERIFIED
+  QUALIFIED
+  DRAFT_READY
+  APPROVED
+  CONTACTED
+  REPLIED
+  TRIAL_INVITED
+  SKU_RECEIVED
+  CALCULATED
+  REUSED
+  PAID_PILOT
+  DISQUALIFIED
+  NO_RESPONSE
+  DO_NOT_CONTACT
+  ARCHIVED
+}
+
+enum LeadType {
+  SELLER
+  IMPORTER
+  FREIGHT_FORWARDER
+  CUSTOMS_BROKER
+  ECOMMERCE_SERVICE
+  INTEGRATION_PARTNER
+}
+
+enum MessageStatus {
+  QUEUED
+  SUBMITTED
+  ACCEPTED
+  DELIVERED
+  FAILED
+  BOUNCED
+  REPLIED
+  MANUAL_RECORDED
+}
+
+enum ApprovalState {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+  EXPIRED
+  SUPERSEDED
+}
+
+enum OutreachChannel {
+  EMAIL
+  LINKEDIN
+  X
+  REDDIT
+  PHONE
+  WEBSITE_FORM
+  IMPORTED
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+  SERVICE_PROVIDER
+  ASSIGNED_EXPERT
+  PLATFORM_ADMIN
+}
+
+enum PlanCode {
+  FREE
+  SELLER
+  BUSINESS
+  SERVICE_PROVIDER
+  DEVELOPER
+  PROFESSIONAL_REVIEW
+}
+
+enum UsageKind {
+  ACTIVE_SKU
+  API_CALL
+  MCP_CALL
+  CALCULATION
+  IMPORT_ROW
+  GROWTH_LEAD
+}
+
+enum WebhookEventKind {
+  JOB_COMPLETED
+  JOB_FAILED
+  REVIEW_COMPLETED
+  CALCULATION_COMPLETED
+  ALERT_CREATED
+  LEAD_STATUS_CHANGED
+  OUTREACH_STATUS_CHANGED
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  ABANDONED
+}
+
+enum TrialEventKind {
+  INVITED
+  SKU_RECEIVED
+  CALCULATED
+  REUSED
+  PAID_PILOT
+  DISQUALIFIED
+}
+
+enum PaymentIntentState {
+  QUOTED
+  SIGNED
+  AWAITING_PAYMENT
+  PAYMENT_VERIFIED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Identity, tenancy, access
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  passwordHash  String
+  displayName   String
+  locale        String    @default("zh-CN")
+  // Failed-login throttling state (never stores the plaintext password).
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  memberships      Membership[]
+  ownedOrgs        Organization[]   @relation("OrgOwner")
+  sessions         Session[]
+  auditLogs        AuditLog[]
+  apiKeys          ApiKey[]
+  reviewAssigned   ReviewTask[]     @relation("ReviewExpert")
+  reviewSubmitted  ReviewTask[]     @relation("ReviewSubmitter")
+  reviewResults    ReviewResult[]
+  approvals        Approval[]
+  messageEvents    MessageEvent[]   @relation("MessageActor")
+  paymentEvidence  PaymentEvidence[]
+  leadsOwned       Lead[]           @relation("LeadOwner")
+  clientGrants     ClientAccessGrant[] @relation("GrantCreator")
+  productsCreated  Product[]        @relation("ProductCreator")
+
+  @@index([email])
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  userId         String
+  // SHA-256 of the session token; the raw token lives only in the cookie.
+  tokenHash      String   @unique
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+  lastSeenAt     DateTime @default(now())
+  revokedAt      DateTime?
+  ipHash         String?
+  userAgentHash  String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  // DEMO | REAL - a DEMO org is never mixed into real reporting.
+  dataMode  DataSource @default(USER_ENTERED)
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner           User                @relation("OrgOwner", fields: [ownerId], references: [id])
+  memberships     Membership[]
+  invitations     Invitation[]
+  products        Product[]
+  productVersions ProductVersion[]
+  classifications ClassificationRecord[]
+  candidates      ClassificationCandidate[]
+  calcRuns        CalculationRun[]
+  scenarioVersions ScenarioVersion[]
+  shipments       Shipment[]
+  alerts          Alert[]
+  reviewTasks     ReviewTask[]
+  reviewResults   ReviewResult[]
+  clientGrantsAsProvider ClientAccessGrant[] @relation("ProviderOrg")
+  clientGrantsAsClient   ClientAccessGrant[] @relation("ClientOrg")
+  leads           Lead[]
+  campaigns       Campaign[]
+  growthJobs      GrowthJob[]
+  drafts          OutreachDraft[]
+  approvals       Approval[]
+  messageEvents   MessageEvent[]
+  suppressions    SuppressionEntry[]
+  trialEvents     TrialEvent[]
+  apiKeys         ApiKey[]
+  usageRecords    UsageRecord[]
+  schedules       Schedule[]
+  subscriptions   Subscription[]
+  pilotOrders     PilotOrder[]
+  paymentEvidence PaymentEvidence[]
+  webhookEndpoints WebhookEndpoint[]
+  webhookDeliveries WebhookDelivery[]
+  auditLogs       AuditLog[]
+  datasetSnapshots DatasetSnapshot[]
+  featureFlags    OrganizationFeatureFlag[]
+  jobs            Job[]
+
+  @@index([dataMode])
+}
+
+model Membership {
+  id             String     @id @default(cuid())
+  userId         String
+  organizationId String
+  role           MemberRole
+  // Service-provider access is always via an explicit grant (never implicit).
+  createdAt      DateTime   @default(now())
+  createdBy      String?
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+}
+
+model Invitation {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String
+  role           MemberRole
+  tokenHash      String   @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime @default(now())
+  createdBy      String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+}
+
+model ClientAccessGrant {
+  id           String   @id @default(cuid())
+  providerOrgId String
+  clientOrgId   String
+  grantedById   String
+  scopes       String[] // e.g. ["products:read","calculations:read"]
+  reason       String
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  providerOrg Organization @relation("ProviderOrg", fields: [providerOrgId], references: [id], onDelete: Cascade)
+  clientOrg   Organization @relation("ClientOrg", fields: [clientOrgId], references: [id], onDelete: Cascade)
+  grantedBy   User         @relation("GrantCreator", fields: [grantedById], references: [id])
+
+  @@unique([providerOrgId, clientOrgId])
+  @@index([clientOrgId])
+}
+
+// ---------------------------------------------------------------------------
+// Products and versions
+// ---------------------------------------------------------------------------
+
+model Product {
+  id             String   @id @default(cuid())
+  organizationId String
+  sku            String
+  nameZh         String
+  nameEn         String
+  descriptionZh  String?
+  descriptionEn  String?
+  materialText   String?
+  materialRatio  Json?
+  imageUrl       String?
+  brand          String?
+  unitOfMeasure  String    @default("PCS")
+  status         ProductStatus @default(DRAFT)
+  // Provenance of the record itself.
+  dataSource     DataSource @default(USER_ENTERED)
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  archivedAt     DateTime?
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User             @relation("ProductCreator", fields: [createdById], references: [id])
+  versions     ProductVersion[]
+  records      ClassificationRecord[]
+  candidates   ClassificationCandidate[]
+  importRows   ProductImportRow[]
+
+  @@unique([organizationId, sku])
+  @@index([organizationId, status])
+  @@index([organizationId, updatedAt])
+}
+
+model ProductVersion {
+  id             String   @id @default(cuid())
+  productId      String
+  organizationId String
+  versionNo      Int
+  // Full immutable snapshot of the profile at this version.
+  snapshot       Json
+  changeReason   String?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, versionNo])
+  @@index([organizationId, createdAt])
+}
+
+model ProductImportBatch {
+  id             String   @id @default(cuid())
+  organizationId String
+  fileName       String
+  fileSha256     String
+  duplicatePolicy String  @default("SKIP") // SKIP | UPDATE | ERROR
+  totalRows      Int      @default(0)
+  importedRows   Int      @default(0)
+  skippedRows    Int      @default(0)
+  failedRows     Int      @default(0)
+  status         String   @default("PENDING") // PENDING|MAPPED|PREVIEWED|IMPORTED|FAILED
+  columnMapping  Json?
+  errorReportUrl String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  rows ProductImportRow[]
+
+  @@index([organizationId, createdAt])
+}
+
+model ProductImportRow {
+  id             String   @id @default(cuid())
+  batchId        String
+  organizationId String
+  rowNo          Int
+  rawData        Json
+  mappedData     Json?
+  outcome        String   @default("PENDING") // PENDING|IMPORTED|SKIPPED|FAILED
+  productId      String?
+  errors         Json?
+  createdAt      DateTime @default(now())
+
+  batch    ProductImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  product  Product?           @relation(fields: [productId], references: [id])
+
+  @@index([batchId, rowNo])
+}
+
+// ---------------------------------------------------------------------------
+// Classification
+// ---------------------------------------------------------------------------
+
+model ClassificationRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  productId      String
+  versionNo      Int
+  // The HS/HTS code the customer (or their broker) has already confirmed.
+  htsCode        String
+  codeType       String   @default("HTSUS") // HTSUS | HS | SCHEDULE_B
+  status         ClassificationStatus @default(USER_CONFIRMED)
+  // Who confirmed it: USER | BROKER | SUPPLIER | UNKNOWN
+  confirmedBy    String
+  confirmedAt    DateTime
+  evidenceText   String?
+  evidenceUrls   String[]
+  // The HTS revision the code was valid under.
+  datasetVersion String?
+  supersededById String?
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, productId, versionNo])
+  @@index([organizationId, htsCode])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ClassificationCandidate {
+  id             String   @id @default(cuid())
+  organizationId String
+  productId      String
+  rank           Int
+  htsCode        String
+  description    String
+  // "匹配分" - a model/heuristic score, NOT a calibrated probability.
+  matchScore     Float
+  // Human-readable basis for the match.
+  matchBasis     String
+  missingInfo    String[]
+  sourceUrls     String[]
+  datasetVersion String
+  aiMode         AiMode   @default(RULE_BASED)
+  // Research output is never a confirmed classification.
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, productId, rank])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Rule data: sources, datasets, versions
+// ---------------------------------------------------------------------------
+
+model RuleSource {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  publisher      String
+  sourceUrl      String
+  jurisdiction   String   @default("US")
+  // Sync cadence metadata.
+  connectionStatus ConnectionStatus @default(NOT_CONFIGURED)
+  lastSyncAt     DateTime?
+  lastError      String?
+  createdAt      DateTime @default(now())
+
+  datasets DatasetVersion[]
+}
+
+model DatasetVersion {
+  id             String   @id @default(cuid())
+  ruleSourceId   String
+  version        String   // e.g. "2026-01-01"
+  retrievedAt    DateTime
+  publishedAt    DateTime?
+  effectiveFrom  DateTime?
+  effectiveTo    DateTime?
+  sha256         String
+  recordCount    Int
+  stagingPath    String?
+  status         String   @default("STAGED") // STAGED|PENDING_APPROVAL|ACTIVE|REJECTED|SUPERSEDED
+  approvedById   String?
+  approvedAt     DateTime?
+  activatedAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  ruleSource RuleSource @relation(fields: [ruleSourceId], references: [id])
+  tariffLines TariffLine[]
+  ruleVersions RuleVersion[]
+
+  @@unique([ruleSourceId, version])
+  @@index([status])
+}
+
+model TariffLine {
+  id             String   @id @default(cuid())
+  datasetVersionId String
+  htsCode        String
+  description    String
+  // Base rate columns.
+  generalRate    String?
+  specialRate    String?
+  otherRate      String?
+  unitOfQuantity String?
+  chapter        Int
+  heading        String
+  indent         Int      @default(0)
+  // CBP status flags carried from the source feed.
+  statusNote     String?
+  compilerNote   String?
+
+  datasetVersion DatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([datasetVersionId, htsCode])
+  @@index([datasetVersionId, heading])
+  @@index([htsCode])
+}
+
+model RuleVersion {
+  id             String   @id @default(cuid())
+  datasetVersionId String
+  // A tariff *layer* (base duty, Chapter 99 additional duty, MPF, HMF, ...).
+  layerCode      String
+  layerType      String   // BASE | ADDITIONAL | FEE | PROGRAM
+  heading        String
+  title          String
+  // Structured rule payload (rates, caps, floors, origin conditions).
+  ruleJson       Json
+  appliesToCountries String[]
+  effectiveFrom  DateTime?
+  effectiveTo    DateTime?
+  // Confirmation state: CANDIDATE | CONFIRMED | NOT_APPLICABLE | CONFLICT | UNCOVERED
+  applicability  String   @default("CANDIDATE")
+  sourceUrl      String
+  publisher      String
+  retrievedAt    DateTime
+  publishedAt    DateTime?
+  checksum       String
+  reviewStatus   String   @default("UNVERIFIED") // UNVERIFIED|VERIFIED|DISPUTED
+  createdAt      DateTime @default(now())
+
+  datasetVersion DatasetVersion @relation(fields: [datasetVersionId], references: [id], onDelete: Cascade)
+
+  @@index([datasetVersionId, layerType])
+  @@index([heading])
+}
+
+model DatasetSnapshot {
+  id             String   @id @default(cuid())
+  organizationId String
+  ruleSourceId   String
+  datasetVersionId String
+  // What the snapshot was used for.
+  purpose        String
+  checksum       String
+  retrievedAt    DateTime
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, retrievedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Shipments and cost profiles
+// ---------------------------------------------------------------------------
+
+model Shipment {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  mode           ShipmentMode @default(UNKNOWN)
+  incoterm       Incoterm   @default(UNKNOWN)
+  // What a DDP/包税 quote already includes - stored explicitly so the engine
+  // never double-counts.
+  includedItems  String[]
+  originCountry  String?
+  shipFromCountry String?
+  portOfLoading  String?
+  portOfDischarge String?
+  totalWeightKg  Decimal?  @db.Decimal(18, 6)
+  totalQuantity  Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calcRuns     CalculationRun[]
+  lineItems    ShipmentLineItem[]
+
+  @@index([organizationId, createdAt])
+}
+
+model ShipmentLineItem {
+  id             String   @id @default(cuid())
+  shipmentId     String
+  productId      String
+  quantity       Int
+  unitPrice      Decimal  @db.Decimal(18, 6)
+  currency       String   @default("USD")
+  weightKg       Decimal? @db.Decimal(18, 6)
+  // Pre-agreed value used for customs, if different from the purchase amount.
+  customsValue   Decimal? @db.Decimal(18, 6)
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+}
+
+model CostProfile {
+  id             String   @id @default(cuid())
+  organizationId String
+  productId      String
+  // Purchase side.
+  unitPrice      Decimal? @db.Decimal(18, 6)
+  currency       String   @default("USD")
+  fxRate         Decimal? @db.Decimal(24, 12)
+  fxSource       String?
+  fxAsOf         DateTime?
+  discountAmount Decimal? @db.Decimal(18, 6)
+  otherPurchaseFees Decimal? @db.Decimal(18, 6)
+  // Freight side (per unit, already allocated).
+  freightCost    Decimal? @db.Decimal(18, 6)
+  insuranceCost  Decimal? @db.Decimal(18, 6)
+  customsClearanceCost Decimal? @db.Decimal(18, 6)
+  portCharges    Decimal? @db.Decimal(18, 6)
+  warehousingCost Decimal? @db.Decimal(18, 6)
+  inlandDeliveryCost Decimal? @db.Decimal(18, 6)
+  otherLandedFees Decimal? @db.Decimal(18, 6)
+  // Duty/tax inputs. null = unknown, never silently 0.
+  dutyRatePct    Decimal? @db.Decimal(12, 6)
+  additionalDutyLayers Json?
+  mpfAmount      Decimal? @db.Decimal(18, 6)
+  hmfAmount      Decimal? @db.Decimal(18, 6)
+  otherTaxes     Decimal? @db.Decimal(18, 6)
+  // Sales side.
+  salesPrice     Decimal? @db.Decimal(18, 6)
+  salesCurrency  String   @default("USD")
+  platformFeePct Decimal? @db.Decimal(12, 6)
+  paymentFeePct  Decimal? @db.Decimal(12, 6)
+  fulfillmentFee Decimal? @db.Decimal(18, 6)
+  adSpendPerUnit Decimal? @db.Decimal(18, 6)
+  returnLossPct  Decimal? @db.Decimal(12, 6)
+  otherVariableFeePct Decimal? @db.Decimal(12, 6)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, productId])
+}
+
+// ---------------------------------------------------------------------------
+// Calculations (immutable runs) and scenarios
+// ---------------------------------------------------------------------------
+
+model CalculationRun {
+  id             String   @id @default(cuid())
+  organizationId String
+  productId      String?
+  shipmentId     String?
+  kind           String   // LANDED_COST | PROFIT | ALLOCATION | SCENARIO
+  status         CalculationStatus
+  // Deterministic engine identity - a replay must reproduce the same result.
+  engineVersion  String
+  rulesVersion   String?
+  inputSnapshot  Json
+  resultJson     Json
+  assumptions    Json
+  missingFields  String[]
+  unsupportedComponents String[]
+  currency       String   @default("USD")
+  aiMode         AiMode   @default(RULE_BASED)
+  dataSource     DataSource @default(USER_ENTERED)
+  scenarioId     String?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  scenario ScenarioVersion? @relation(fields: [scenarioId], references: [id])
+
+  @@index([organizationId, productId, createdAt])
+  @@index([organizationId, kind, createdAt])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  shipment Shipment? @relation(fields: [shipmentId], references: [id])
+}
+
+model ScenarioVersion {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  kind           ScenarioKind @default(CUSTOM)
+  // Frozen inputs so an old comparison is never rewritten by new rules.
+  inputSnapshot  Json
+  engineVersion  String
+  rulesVersion   String?
+  assumptions    Json
+  // Denormalised headline result for fast side-by-side rendering.
+  headlineJson   Json?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  calcRuns CalculationRun[]
+
+  @@index([organizationId, createdAt])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Alerts and review
+// ---------------------------------------------------------------------------
+
+model Alert {
+  id             String   @id @default(cuid())
+  organizationId String
+  kind           String   // DATASET_CHANGED | RULE_EXPIRED | AFFECTED_SKU | TASK
+  title          String
+  detail         String?
+  datasetVersionId String?
+  affectedProductIds String[]
+  status         AlertStatus @default(OPEN)
+  // When a rule change is known but the new value is not, we must NOT invent
+  // a profit delta - this flag records that only "may be affected" is known.
+  impactKnown    Boolean  @default(false)
+  createdById    String?
+  acknowledgedAt DateTime?
+  taskId         String?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId, status, createdAt])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ReviewTask {
+  id             String   @id @default(cuid())
+  organizationId String
+  productId      String?
+  scope          String   // CLASSIFICATION | COST | DATA_COMPLETENESS | PROFESSIONAL
+  status         ReviewStatus @default(PENDING_ASSIGNMENT)
+  priority       String   @default("NORMAL")
+  // Restricted material visible to the assigned expert only.
+  submittedById  String
+  expertId       String?
+  assignedAt     DateTime?
+  dueAt          DateTime?
+  // When no real partner exists the task must say so, not pretend review.
+  partnerState   String   @default("NEEDS_PARTNER_CONFIGURATION")
+  requestNote    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  completedAt    DateTime?
+
+  submitter User          @relation("ReviewSubmitter", fields: [submittedById], references: [id])
+  expert    User?         @relation("ReviewExpert", fields: [expertId], references: [id])
+  results   ReviewResult[]
+
+  @@index([organizationId, status, createdAt])
+  @@index([expertId, status])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ReviewResult {
+  id             String   @id @default(cuid())
+  reviewTaskId   String
+  organizationId String
+  // Each conclusion records who, when, scope and product version.
+  conclusion     String
+  basis          String
+  productVersionNo Int?
+  attachments    String[]
+  // ADOPTED | RETURNED | PENDING_USER
+  state          String   @default("PENDING_USER")
+  createdById    String
+  createdAt      DateTime @default(now())
+  userDecidedAt  DateTime?
+
+  task ReviewTask @relation(fields: [reviewTaskId], references: [id], onDelete: Cascade)
+
+  @@index([reviewTaskId])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy User @relation(fields: [createdById], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Growth / CRM
+// ---------------------------------------------------------------------------
+
+model Campaign {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  targetProfile  Json
+  keywords       String[]
+  exclusions     String[]
+  language       String   @default("zh")
+  targetCount    Int      @default(20)
+  maxCount       Int      @default(50)
+  // Scoring rule version, so scores stay explainable across time.
+  scoreRulesVersion String @default("v1")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads        Lead[]
+  jobs         GrowthJob[]
+
+  @@index([organizationId])
+}
+
+model Lead {
+  id             String   @id @default(cuid())
+  organizationId String
+  campaignId     String?
+  leadType       LeadType @default(SELLER)
+  companyName    String
+  website        String?
+  normalizedDomain String
+  country        String?
+  language       String?
+  businessType   String?
+  categories     String[]
+  salesChannels  String[]
+  publicBusinessContact String?
+  sourceUrls     String[]
+  evidenceExcerpt String?
+  observedAt     DateTime?
+  verifiedAt     DateTime?
+  fitReason      String?
+  unknowns       String[]
+  // Score breakdown with per-item evidence; never a bare number.
+  scoreBreakdown Json?
+  totalScore     Int      @default(0)
+  status         LeadStatus @default(NEW)
+  ownerId        String?
+  nextAction     String?
+  nextActionAt   DateTime?
+  doNotContact   Boolean  @default(false)
+  retentionUntil DateTime?
+  dataSource     DataSource @default(USER_ENTERED)
+  // Dedup bookkeeping.
+  mergedIntoId   String?
+  mergeEvidence  Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id])
+  owner        User?        @relation("LeadOwner", fields: [ownerId], references: [id])
+  mergedInto   Lead?        @relation("LeadMerge", fields: [mergedIntoId], references: [id])
+  merged       Lead[]       @relation("LeadMerge")
+  evidence     LeadEvidence[]
+  drafts       OutreachDraft[]
+  messageEvents MessageEvent[]
+  trialEvents  TrialEvent[]
+
+  @@unique([organizationId, normalizedDomain, companyName])
+  @@index([organizationId, status])
+  @@index([organizationId, totalScore])
+  @@index([normalizedDomain])
+}
+
+model LeadEvidence {
+  id             String   @id @default(cuid())
+  leadId         String
+  kind           String   // WEBSITE | DIRECTORY | DISCUSSION | IMPORT | EXTERNAL_AGENT
+  sourceUrl      String
+  excerpt        String
+  retrievedAt    DateTime @default(now())
+  // Which scoring dimension this evidence supports.
+  scoreDimension String?
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+}
+
+model GrowthJob {
+  id             String   @id @default(cuid())
+  organizationId String
+  campaignId     String?
+  // Idempotency key: org + campaign + planned date in the org timezone.
+  idempotencyKey String   @unique
+  scheduledFor   DateTime
+  timezone       String
+  status         JobStatus @default(QUEUED)
+  // RULE_BASED when no model is available.
+  aiMode         AiMode   @default(RULE_BASED)
+  targetCount    Int      @default(20)
+  maxCount       Int      @default(50)
+  resultJson     Json?
+  errorText      String?
+  externalRunId  String?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id])
+  dailyReport  DailyReport?
+
+  @@index([organizationId, scheduledFor])
+  @@index([status, scheduledFor])
+}
+
+model DailyReport {
+  id             String   @id @default(cuid())
+  growthJobId    String   @unique
+  organizationId String
+  reportDate     DateTime
+  timezone       String
+  candidatesCount Int      @default(0)
+  duplicatesRemoved Int    @default(0)
+  verifiedCount  Int      @default(0)
+  highPriorityCount Int    @default(0)
+  draftsCount    Int      @default(0)
+  approvedCount Int      @default(0)
+  sentCount      Int      @default(0)
+  repliedCount   Int      @default(0)
+  skuReceivedCount Int    @default(0)
+  calculatedCount Int     @default(0)
+  reusedCount    Int      @default(0)
+  paidPilotCount Int      @default(0)
+  sourceFailures Json?
+  nextActions    Json?
+  csvUrl         String?
+  createdAt      DateTime @default(now())
+
+  job GrowthJob @relation(fields: [growthJobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, reportDate])
+}
+
+model OutreachDraft {
+  id             String   @id @default(cuid())
+  organizationId String
+  leadId         String
+  channel        OutreachChannel @default(EMAIL)
+  language       String   @default("zh")
+  subject        String
+  body           String
+  // Every claim in the body must be traceable to a source; unknowns stay
+  // empty rather than invented.
+  claims         Json?
+  // Immutable versioning: a content or recipient change requires re-approval.
+  version        Int      @default(1)
+  supersededById String?
+  state          ApprovalState @default(DRAFT)
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  approvals    Approval[]
+  messageEvents MessageEvent[]
+
+  @@index([organizationId, state, createdAt])
+}
+
+model Approval {
+  id             String   @id @default(cuid())
+  organizationId String
+  subjectType    String   // OUTREACH_DRAFT | EXTERNAL_SEND | ...
+  subjectId      String
+  draftId        String?
+  // The approval binds to this exact draft version + recipients + channel.
+  draftVersion   Int?
+  recipient      String?
+  channel        OutreachChannel?
+  decision       ApprovalState @default(PENDING)
+  decidedById    String?
+  decidedAt      DateTime?
+  reason         String?
+  expiresAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  decidedBy User?          @relation(fields: [decidedById], references: [id])
+  draft     OutreachDraft? @relation(fields: [draftId], references: [id])
+  messageEvents MessageEvent[]
+
+  @@index([organizationId, decision, createdAt])
+  @@index([subjectId])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model MessageEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  draftId        String?
+  leadId         String?
+  approvalId     String?
+  channel        OutreachChannel
+  status         MessageStatus
+  // Idempotency for retries: one logical send = one idempotency key.
+  idempotencyKey String   @unique
+  recipient      String
+  providerMessageId String?
+  // Channel receipt states. ACCEPTED is not DELIVERED.
+  submittedAt    DateTime?
+  acceptedAt     DateTime?
+  deliveredAt    DateTime?
+  failedAt       DateTime?
+  failureReason  String?
+  // Manual contact without a channel receipt.
+  evidenceUrl    String?
+  actorId        String?
+  createdAt      DateTime @default(now())
+
+  draft      OutreachDraft? @relation(fields: [draftId], references: [id])
+  lead       Lead?          @relation(fields: [leadId], references: [id])
+  approval   Approval?      @relation(fields: [approvalId], references: [id])
+  actor      User?          @relation("MessageActor", fields: [actorId], references: [id])
+
+  @@index([organizationId, status, createdAt])
+  @@index([leadId])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model SuppressionEntry {
+  id             String   @id @default(cuid())
+  organizationId String
+  // Normalized email/domain/phone marker - minimal data, no message content.
+  kind           String   // EMAIL | DOMAIN | PHONE
+  value          String
+  reason         String?
+  source         String   // UNSUBSCRIBE | REJECT | MANUAL | IMPORT
+  // Never deleted on contact removal, so re-import cannot re-contact.
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, kind, value])
+  @@index([organizationId])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model TrialEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  leadId         String
+  kind           TrialEventKind
+  // Links a growth lead to a real customer workspace product, after the
+  // customer explicitly confirms the move. No silent data copying.
+  productId      String?
+  calculationRunId String?
+  note           String?
+  evidenceUrl    String?
+  occurredAt     DateTime @default(now())
+  createdById    String?
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, kind])
+  @@index([leadId])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Platform: API keys, usage, jobs, schedules, webhooks, billing, audit
+// ---------------------------------------------------------------------------
+
+model ApiKey {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  // SHA-256 of the key. The plaintext is returned exactly once.
+  keyHash        String   @unique
+  keyPrefix      String   // shown in the UI for identification
+  scopes         String[]
+  roles          MemberRole[]
+  // Quota and lifetime.
+  quotaPerDay    Int      @default(1000)
+  expiresAt      DateTime?
+  revokedAt      DateTime?
+  lastUsedAt     DateTime?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  usageRecords UsageRecord[]
+
+  @@index([organizationId, revokedAt])
+}
+
+model UsageRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  apiKeyId       String?
+  userId         String?
+  kind           UsageKind
+  count          Int      @default(1)
+  endpoint       String?
+  requestId      String?
+  occurredAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  apiKey        ApiKey?       @relation(fields: [apiKeyId], references: [id])
+
+  @@index([organizationId, kind, occurredAt])
+  @@index([apiKeyId, occurredAt])
+}
+
+model Job {
+  id             String   @id @default(cuid())
+  organizationId String?
+  kind           String
+  // Idempotency: same key => same logical job.
+  idempotencyKey String   @unique
+  payload        Json
+  status         JobStatus @default(QUEUED)
+  priority       Int      @default(0)
+  maxAttempts    Int      @default(3)
+  attempt        Int      @default(0)
+  // Lease/heartbeat so a restarted worker can recover safely.
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  lockedUntil    DateTime?
+  lastError      String?
+  runAfter       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  runs JobRun[]
+
+  @@index([status, runAfter])
+  @@index([organizationId, kind])
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model JobRun {
+  id             String   @id @default(cuid())
+  jobId          String
+  attempt        Int
+  workerId       String
+  status         JobStatus
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+  durationMs     Int?
+  errorText      String?
+  resultJson     Json?
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, attempt])
+}
+
+model Schedule {
+  id             String   @id @default(cuid())
+  organizationId String
+  kind           String   // GROWTH_DAILY | DATASET_SYNC | ...
+  cronExpression String
+  timezone       String
+  // Enabled only after a successful manual verification run.
+  enabled        Boolean  @default(false)
+  lastRunAt      DateTime?
+  nextRunAt      DateTime?
+  lastError      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, kind])
+}
+
+model WebhookEndpoint {
+  id             String   @id @default(cuid())
+  organizationId String
+  url            String
+  events         WebhookEventKind[]
+  secret         String
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId])
+}
+
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  endpointId     String
+  organizationId String
+  eventKind      WebhookEventKind
+  // Replay protection: (endpoint, eventId) is unique.
+  eventId        String
+  payload        Json
+  signature      String
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int      @default(0)
+  lastResponseCode Int?
+  lastError      String?
+  nextRetryAt    DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([endpointId, eventId])
+  @@index([status, nextRetryAt])
+}
+
+model Plan {
+  id             String   @id @default(cuid())
+  code           PlanCode @unique
+  nameZh         String
+  nameEn         String
+  // Trial pricing assumptions - never presented as verified market prices.
+  priceUsdMonthly Decimal? @db.Decimal(12, 2)
+  maxActiveSkus  Int?
+  apiCallsPerDay Int?
+  features       Json
+  active         Boolean  @default(true)
+}
+
+model Entitlement {
+  id             String   @id @default(cuid())
+  organizationId String
+  planCode       PlanCode
+  // Freeze the entitlement snapshot the org is currently on.
+  limits         Json
+  trialEndsAt    DateTime?
+  startsAt       DateTime @default(now())
+  endsAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, planCode, startsAt])
+}
+
+model Subscription {
+  id             String   @id @default(cuid())
+  organizationId String
+  planCode       PlanCode
+  state          String   @default("TRIAL") // TRIAL|ACTIVE|PAST_DUE|CANCELLED
+  // Real payment is disabled; only sandbox/intents are recorded.
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, state])
+}
+
+model PilotOrder {
+  id             String   @id @default(cuid())
+  organizationId String
+  planCode       PlanCode
+  amountUsd      Decimal  @db.Decimal(12, 2)
+  currency       String   @default("USD")
+  state          PaymentIntentState @default(QUOTED)
+  quoteNote     String?
+  quotedAt       DateTime @default(now())
+  decidedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  evidence      PaymentEvidence[]
+
+  @@index([organizationId, state])
+}
+
+model PaymentEvidence {
+  id             String   @id @default(cuid())
+  organizationId String
+  pilotOrderId   String
+  // SANDBOX | MANUAL_VERIFIED | NONE - sandbox never counts as revenue.
+  kind           String   @default("NONE")
+  amountUsd      Decimal  @db.Decimal(12, 2)
+  currency       String   @default("USD")
+  reference      String?
+  verifiedById   String?
+  verifiedAt     DateTime?
+  note           String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  pilotOrder    PilotOrder    @relation(fields: [pilotOrderId], references: [id], onDelete: Cascade)
+  verifiedBy    User?         @relation(fields: [verifiedById], references: [id])
+
+  @@index([organizationId, kind])
+}
+
+model FeatureFlag {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  description    String
+  enabled        Boolean  @default(false)
+  // e.g. "real classification recommendation is a controlled feature"
+  rolloutNote   String?
+  updatedById    String?
+  updatedAt      DateTime @updatedAt
+}
+
+model OrganizationFeatureFlag {
+  id             String   @id @default(cuid())
+  organizationId String
+  key            String
+  enabled        Boolean
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  actorId        String?
+  actorKind      String   // USER | API_KEY | SYSTEM | WORKER | MCP
+  action         String
+  resourceType   String
+  resourceId     String?
+  requestId      String?
+  ipHash         String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([resourceType, resourceId])
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
