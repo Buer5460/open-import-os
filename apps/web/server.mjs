@@ -458,7 +458,9 @@ const server = createServer(async (req, res) => {
 // R1.1-05: bind the loopback interface explicitly. The previous no-host call
 // listened on every interface (the OS default), which the ENTRY notes claimed
 // was 127.0.0.1-only. Only localhost may reach this app.
-server.listen(port, "127.0.0.1", () => {
+// Cloud deployment adapter: support HOST env var (e.g. 0.0.0.0 in Docker/Render/Cloud), fallback to 127.0.0.1
+const host = process.env.HOST || "127.0.0.1";
+server.listen(port, host, () => {
   console.log(`[web] 免费测算器 running at ${publicBase}`);
   console.log(`[web] engine: ${ENGINE_VERSION}`);
 });

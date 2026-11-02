@@ -17,7 +17,7 @@
     "demo:seed": "pnpm --filter @open-import-os/db exec tsx prisma/seed.ts",
     "test": "pnpm -r --if-present test",
     "test:coverage": "node scripts/test-coverage.mjs",
-    "build": "pnpm -r --if-present build",
+    "build": "pnpm --filter @open-import-os/db prisma:generate",
     "backup": "node scripts/backup.mjs",
     "restore:verify": "node scripts/restore-verify.mjs",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -26,7 +26,8 @@
     "pg:start": "node scripts/pg.mjs start",
     "pg:stop": "node scripts/pg.mjs stop",
     "pg:status": "node scripts/pg.mjs status",
-    "migrate": "pnpm --filter @open-import-os/db exec prisma migrate dev"
+    "migrate": "pnpm --filter @open-import-os/db exec prisma migrate dev",
+    "deploy:seed": "pnpm --filter @open-import-os/db exec prisma migrate deploy && pnpm --filter @open-import-os/db exec tsx prisma/seed.ts"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
