@@ -331,6 +331,20 @@
     </div>
   </details>
 
+  <div class="infobox" id="lead-box" style="border-left:4px solid #1f6f5c">
+    <div style="font-weight:700;margin-bottom:8px">📊 想要一份可保存的成本测算报告？</div>
+    <div style="font-size:12.5px;color:#5b6774;margin-bottom:10px">
+      留下邮箱，我们把这套测算结果生成 PDF 报告发给你，并附赠《美国进口到仓成本核算清单》（含 12 项常见漏算费用）。
+      不发垃圾邮件，随时可退订。
+    </div>
+    <form id="lead-form" style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="lead-email" type="email" required placeholder="you@company.com"
+             style="flex:1;min-width:200px;padding:9px 11px;border:1px solid #cfd6dc;border-radius:6px;font-size:14px">
+      <button class="btn" type="submit" id="lead-go" style="width:auto;padding:9px 20px;font-size:14px">发送报告</button>
+    </form>
+    <div id="lead-msg" style="margin-top:8px;font-size:12.5px;display:none"></div>
+  </div>
+
   <div class="disc">
     引擎版本：<span id="eng"></span><br>
     本工具提供基于你所输入费率的已知成本测算，<b>不构成报关或法律意见</b>。HTS 归类建议须由持牌报关人复核。
@@ -519,6 +533,12 @@ $("f").addEventListener("submit", async (e) => {
     $("eng").textContent = d.engineVersion || "—";
     $("out").style.display = "block";
     $("out").scrollIntoView({ behavior: "smooth", block: "start" });
+    // 漏斗核心事件：计算完成（= 用户真实使用了产品）
+    trackEvent("calculation_completed", {
+      landed: d.landed.unitLandedCost,
+      status: d.landed.status,
+      profit_status: d.profit ? d.profit.status : null,
+    });
 
     // Funnel instrumentation: the 4th level matters most.
     try {
@@ -532,6 +552,56 @@ $("f").addEventListener("submit", async (e) => {
     $("go").disabled = false;
     $("go").textContent = "免费测算";
   }
+});
+
+// ---- 获客埋点：UTM 采集 + 漏斗事件 ----
+const _params = new URLSearchParams(location.search);
+const _utm = {
+  source: _params.get("utm_source") || "direct",
+  medium: _params.get("utm_medium") || "",
+  campaign: _params.get("utm_campaign") || "",
+  content: _params.get("utm_content") || "",
+};
+// 首次访问落库到 localStorage，后续计算事件带上来源
+try {
+  if (!localStorage.getItem("oios_utm")) {
+    localStorage.setItem("oios_utm", JSON.stringify({ ..._utm, ts: Date.now(), ref: document.referrer || "" }));
+  }
+} catch (e) {}
+
+// 漏斗：计算完成（核心转化事件）
+function trackEvent(name, extra) {
+  let src = _utm;
+  try { const v = localStorage.getItem("oios_utm"); if (v) src = JSON.parse(v); } catch (e) {}
+  const payload = { event: name, ...src, ...(extra || {}), url: location.href, ts: new Date().toISOString() };
+  // 无后端时：存本地 + 控制台，便于人工核查；接后端后改 POST
+  try {
+    const log = JSON.parse(localStorage.getItem("oios_events") || "[]");
+    log.push(payload); localStorage.setItem("oios_events", JSON.stringify(log.slice(-50)));
+  } catch (e) {}
+  console.log("[track]", JSON.stringify(payload));
+}
+
+// 留资表单
+$("lead-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const email = ($("lead-email").value || "").trim();
+  const msg = $("lead-msg");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    msg.textContent = "请输入有效邮箱"; msg.style.color = "#a8341f"; msg.style.display = "block"; return;
+  }
+  // 无后端：本地留存 + 明确告知用户当前为演示态
+  try {
+    const leads = JSON.parse(localStorage.getItem("oios_leads") || "[]");
+    leads.push({ email, utm: _utm, ts: new Date().toISOString(),
+                 landed: $("v-landed").textContent, contrib: $("v-contrib").textContent });
+    localStorage.setItem("oios_leads", JSON.stringify(leads));
+  } catch (e) {}
+  trackEvent("lead_submitted", { email_domain: email.split("@")[1] });
+  msg.innerHTML = "✅ 已记录。当前为演示版，报告生成功能待接入邮件服务；" +
+                  "如需立即获取，请截图保存上方结果。";
+  msg.style.color = "#1f6f5c"; msg.style.display = "block";
+  $("lead-go").disabled = true;
 });
 </script>
 </body>
