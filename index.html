@@ -81,7 +81,35 @@
   <div class="kick">FREE · NO SIGNUP</div>
   <h1>从中国进口到美国，你的真实成本是多少？</h1>
   <div class="sub">输入采购价和运费，30 秒算出到仓成本、盈亏平衡售价、目标利润率售价。不用注册。</div>
+  <div id="account-bar" style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12.5px">
+    <span id="account-state" style="color:#5b6774">未登录（免费测算无需登录）</span>
+    <button type="button" id="btn-register" style="padding:6px 14px;border:1px solid #141a20;background:#141a20;color:#fff;border-radius:6px;cursor:pointer;font-size:12.5px;font-family:inherit">注册</button>
+    <button type="button" id="btn-login" style="padding:6px 14px;border:1px solid #cfd6dc;background:#fff;color:#141a20;border-radius:6px;cursor:pointer;font-size:12.5px;font-family:inherit">登录</button>
+    <button type="button" id="btn-logout" style="display:none;padding:6px 14px;border:1px solid #cfd6dc;background:#fff;color:#141a20;border-radius:6px;cursor:pointer;font-size:12.5px;font-family:inherit">退出</button>
+  </div>
 </header>
+
+<div id="auth-modal" style="display:none;position:fixed;inset:0;background:rgba(20,26,32,.55);z-index:50;padding:20px;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:10px;padding:22px;width:100%;max-width:400px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <strong id="auth-title" style="font-size:15px">注册</strong>
+      <button type="button" id="auth-close" style="border:none;background:none;font-size:20px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div id="auth-fields">
+      <label>邮箱</label>
+      <input id="auth-email" type="email" required placeholder="you@company.com"
+             style="margin-bottom:10px;padding:9px 11px;border:1px solid #cfd6dc;border-radius:6px;font-size:14px;width:100%;box-sizing:border-box">
+      <label id="auth-company-label">公司（选填）</label>
+      <input id="auth-company" type="text" placeholder="公司名"
+             style="margin-bottom:10px;padding:9px 11px;border:1px solid #cfd6dc;border-radius:6px;font-size:14px;width:100%;box-sizing:border-box">
+      <label>密码</label>
+      <input id="auth-password" type="password" required minlength="10" placeholder="至少 10 位"
+             style="margin-bottom:12px;padding:9px 11px;border:1px solid #cfd6dc;border-radius:6px;font-size:14px;width:100%;box-sizing:border-box">
+      <div id="auth-msg" style="font-size:12.5px;margin-bottom:10px;display:none"></div>
+      <button type="button" id="auth-submit" style="width:100%;padding:11px;background:#141a20;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">注册</button>
+    </div>
+  </div>
+</div>
 
 <form id="f">
   <h2>① 采购与运输</h2>
@@ -554,6 +582,113 @@ $("f").addEventListener("submit", async (e) => {
   }
 });
 
+
+// ---- 后端 API 基址（Cloudflare Pages Functions 与站点同源）----
+const API_BASE = "";
+
+// ---- 注册 / 登录 ----
+const _authModal = $("auth-modal");
+let _authMode = "register";
+
+function openAuth(mode) {
+  _authMode = mode;
+  $("auth-title").textContent = mode === "register" ? "注册账号" : "登录";
+  $("auth-submit").textContent = mode === "register" ? "注册" : "登录";
+  $("auth-company-label").style.display = mode === "register" ? "block" : "none";
+  $("auth-company").style.display = mode === "register" ? "block" : "none";
+  $("auth-msg").style.display = "none";
+  _authModal.style.display = "flex";
+  trackEvent(mode === "register" ? "register_opened" : "login_opened");
+}
+function closeAuth() { _authModal.style.display = "none"; }
+
+$("btn-register")?.addEventListener("click", () => openAuth("register"));
+$("btn-login")?.addEventListener("click", () => openAuth("login"));
+$("auth-close")?.addEventListener("click", closeAuth);
+_authModal?.addEventListener("click", (e) => { if (e.target === _authModal) closeAuth(); });
+
+$("auth-submit")?.addEventListener("click", async () => {
+  const email = ($("auth-email").value || "").trim();
+  const password = ($("auth-password").value || "");
+  const company = ($("auth-company").value || "").trim();
+  const msg = $("auth-msg");
+  msg.style.display = "block"; msg.style.color = "#5b6774";
+  msg.textContent = "处理中…";
+  $("auth-submit").disabled = true;
+  try {
+    const r = await fetch(API_BASE + (_authMode === "register" ? "/api/register" : "/api/login"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(_authMode === "register" ? { email, password, company } : { email, password }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      trackEvent(_authMode === "register" ? "register_success" : "login_success", { email_domain: email.split("@")[1] });
+      msg.textContent = _authMode === "register" ? "注册成功，已自动登录。" : "登录成功。";
+      msg.style.color = "#1f6f5c";
+      setTimeout(() => { closeAuth(); refreshAccount(true); }, 600);
+    } else {
+      trackEvent(_authMode === "register" ? "register_failed" : "login_failed", { reason: d.error });
+      const dup = _authMode === "register" && /already/i.test(String(d.error ?? ""));
+      if (dup) {
+        msg.innerHTML = "该邮箱已注册过。<a href='javascript:void(0)' id='switch-to-login' style='color:#2a5d8f;font-weight:700'>直接登录</a>";
+        $("switch-to-login")?.addEventListener("click", () => openAuth("login"));
+      } else {
+        msg.textContent = d.error || "操作失败";
+      }
+      msg.style.color = "#a8341f";
+    }
+  } catch (e) {
+    msg.textContent = "网络错误：" + (e?.message || e);
+    msg.style.color = "#a8341f";
+  } finally {
+    $("auth-submit").disabled = false;
+  }
+});
+
+// ---- 会话状态 ----
+// 未登录时不请求 /api/me（否则浏览器 console 会记录一条 401 噪音）。
+// 登录成功或页面刷新（带 cookie）时才探测。
+const _hasSessionHint = document.cookie.includes("oios_has_session=1");
+
+async function refreshAccount(force = false) {
+  if (!force && !_hasSessionHint) {
+    $("account-state").textContent = "未登录（免费测算无需登录）";
+    $("btn-register").style.display = "inline-block";
+    $("btn-login").style.display = "inline-block";
+    $("btn-logout").style.display = "none";
+    return false;
+  }
+  try {
+    const r = await fetch(API_BASE + "/api/me", { credentials: "include" });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok && d.user) {
+      $("account-state").textContent = "已登录：" + d.user.email + (d.user.company ? "（" + d.user.company + "）" : "");
+      $("btn-register").style.display = "none";
+      $("btn-login").style.display = "none";
+      $("btn-logout").style.display = "inline-block";
+      trackEvent("session_active", { email_domain: String(d.user.email).split("@")[1] });
+      return true;
+    }
+  } catch (e) {}
+  $("account-state").textContent = "未登录（免费测算无需登录）";
+  $("btn-register").style.display = "inline-block";
+  $("btn-login").style.display = "inline-block";
+  $("btn-logout").style.display = "none";
+  return false;
+}
+
+$("btn-logout")?.addEventListener("click", async () => {
+  try {
+    await fetch(API_BASE + "/api/logout", { method: "POST", credentials: "include" });
+    trackEvent("logout");
+  } catch (e) {}
+  try { document.cookie = "oios_has_session=; Path=/; Max-Age=0"; } catch (e) {}
+  refreshAccount(true);
+});
+
+refreshAccount();
+
 // ---- 获客埋点：UTM 采集 + 漏斗事件 ----
 const _params = new URLSearchParams(location.search);
 const _utm = {
@@ -583,25 +718,57 @@ function trackEvent(name, extra) {
 }
 
 // 留资表单
-$("lead-form")?.addEventListener("submit", (e) => {
+$("lead-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const email = ($("lead-email").value || "").trim();
   const msg = $("lead-msg");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
     msg.textContent = "请输入有效邮箱"; msg.style.color = "#a8341f"; msg.style.display = "block"; return;
   }
-  // 无后端：本地留存 + 明确告知用户当前为演示态
+  $("lead-go").disabled = true;
+  msg.textContent = "提交中…"; msg.style.color = "#5b6774"; msg.style.display = "block";
+
+  let stored = null;
+  try {
+    const r = await fetch(API_BASE + "/api/leads", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email,
+        landed: $("v-landed").textContent,
+        contribution: $("v-contrib").textContent,
+        margin: $("v-margin").textContent,
+        status: ($("v-landed-label").textContent || "").includes("不完整") ? "INCOMPLETE" : "COMPLETE_WITHIN_SCOPE",
+        utm: _utm,
+        page: location.href,
+      }),
+    });
+    stored = await r.json();
+  } catch (e) {
+    stored = { ok: false, error: String(e) };
+  }
+
+  // 本地兜底：即使后端不可达也不丢线索
   try {
     const leads = JSON.parse(localStorage.getItem("oios_leads") || "[]");
     leads.push({ email, utm: _utm, ts: new Date().toISOString(),
                  landed: $("v-landed").textContent, contrib: $("v-contrib").textContent });
     localStorage.setItem("oios_leads", JSON.stringify(leads));
   } catch (e) {}
-  trackEvent("lead_submitted", { email_domain: email.split("@")[1] });
-  msg.innerHTML = "✅ 已记录。当前为演示版，报告生成功能待接入邮件服务；" +
-                  "如需立即获取，请截图保存上方结果。";
-  msg.style.color = "#1f6f5c"; msg.style.display = "block";
-  $("lead-go").disabled = true;
+
+  trackEvent("lead_submitted", { email_domain: email.split("@")[1], stored: !!stored?.stored });
+
+  if (stored?.ok) {
+    msg.textContent = stored.emailed
+      ? "✅ 已收到！报告已发送到你的邮箱。若几分钟未收到请检查垃圾邮件。"
+      : "✅ 已记录！我们会尽快联系你。";
+    msg.style.color = "#1f6f5c";
+  } else {
+    msg.textContent = "✅ 已记录（本机暂存）。如未收到邮件请稍后重试。";
+    msg.style.color = "#b8860b";
+  }
+  msg.style.display = "block";
+  $("lead-go").disabled = false;
 });
 </script>
 </body>
