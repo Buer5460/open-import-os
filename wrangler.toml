@@ -1,0 +1,14 @@
+# Cloudflare Pages Functions + D1 (both free tier)
+name = "open-import-os"
+compatibility_date = "2026-01-01"
+pages_build_output_dir = "apps/web/public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "open-import-os"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Secrets are NOT in this file. Set them with:
+#   wrangler pages secret put RESEND_API_KEY --project-name open-import-os
+#   wrangler pages secret put LEAD_NOTIFY_EMAIL --project-name open-import-os
+#   wrangler pages secret put LEADS_ADMIN_TOKEN --project-name open-import-os
